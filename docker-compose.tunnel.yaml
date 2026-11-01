@@ -1,0 +1,70 @@
+name: checkcle
+x-logging: &default-logging
+  options:
+    max-size: '5m'
+    max-file: '1'
+  driver: json-file
+
+services:
+  app:
+    image: operacle/checkcle:latest
+    container_name: checkcle-app
+    domainname: ${BASE_DOMAIN_NAME:-example.com}
+    hostname: ${BASE_HOST_NAME:-$HOSTNAME}
+    restart: always
+    pull_policy: always
+    logging: *default-logging
+    environment:
+      TZ: ${TZ:-America/New_York}
+      CONNECTION_STRING: host=checkcle-db port=5432 user=${DB_USER_NAME:-checkcle} dbname=${DB_CREATE_DATABASE_NAME:-checkcle} password=${DB_USER_PASS:-replace-with-a-random-password} sslmode=disable
+      CONTAINER_NAME: checkcle-app
+      HOSTNAME: ${BASE_HOST_NAME:-$HOSTNAME}
+    volumes:
+      - './volumes/data/checkcle:/data'
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8090/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    depends_on:
+      db:
+        condition: service_healthy
+    labels:
+      - 'cloudflare.enable=true'
+      - 'cloudflare.service=http://checkcle-app:8090'
+      - 'cloudflare.hostname=${BASE_HOST_NAME:-$HOSTNAME}'
+    networks:
+      - checkcle
+      - cloudflare
+
+  db:
+    image: postgres:latest
+    container_name: checkcle-db
+    domainname: ${BASE_DOMAIN_NAME:-example.com}
+    hostname: checkcle-db
+    restart: always
+    pull_policy: always
+    logging: *default-logging
+    environment:
+      TZ: ${TZ:-America/New_York}
+      PGDATA: /var/lib/postgresql/data
+      POSTGRES_DB: ${DB_CREATE_DATABASE_NAME:-checkcle}
+      POSTGRES_USER: ${DB_USER_NAME:-checkcle}
+      POSTGRES_PASSWORD: ${DB_USER_PASS:-replace-with-a-random-password}
+      CONTAINER_NAME: checkcle-db
+    volumes:
+      - './volumes/data/db/postgres/checkcle:/var/lib/postgresql/data:z'
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+    networks:
+      - checkcle
+
+networks:
+  checkcle:
+    name: checkcle
+    external: false
+  cloudflare:
+    external: true
